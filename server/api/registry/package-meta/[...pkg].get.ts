@@ -18,6 +18,7 @@ export default defineCachedEventHandler(
 
     const packageName = decodeURIComponent(pkgParam)
     const encodedName = encodePackageName(packageName)
+    const includeRepositoryStars = shouldIncludeRepositoryStars(getQuery(event))
 
     try {
       const [packument, downloads] = await Promise.all([
@@ -47,6 +48,16 @@ export default defineCachedEventHandler(
             .replace(/\.git$/, '')
         }
       }
+      const cachedFetch = event.context.cachedFetch
+      if (includeRepositoryStars && !cachedFetch) {
+        console.error('[package-meta] Missing cachedFetch in request context')
+      }
+
+      const repositoryRef = repositoryUrl ? parseRepoUrl(repositoryUrl) : null
+      const repositoryStars =
+        includeRepositoryStars && cachedFetch && repositoryRef
+          ? await getRepositoryStars(cachedFetch, repositoryRef)
+          : null
 
       // Extract bugs URL
       // TODO: @npm/types types bugs as { email?: string; url?: string } on
@@ -91,6 +102,7 @@ export default defineCachedEventHandler(
         author,
         maintainers: packument.maintainers,
         weeklyDownloads: downloads?.downloads,
+        ...(includeRepositoryStars ? { repositoryStars } : {}),
       }
     } catch (error: unknown) {
       handleApiError(error, {
@@ -104,7 +116,7 @@ export default defineCachedEventHandler(
     swr: true,
     getKey: event => {
       const pkg = getRouterParam(event, 'pkg') ?? ''
-      return `package-meta:v1:${pkg}`
+      return getPackageMetaCacheKey(pkg, shouldIncludeRepositoryStars(getQuery(event)))
     },
   },
 )
